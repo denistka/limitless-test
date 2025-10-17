@@ -1,71 +1,6 @@
-# Limitless Task Board
+-- Limitless Task Board - Initial Database Schema
+-- Migration: 20251017181517_initial_schema.sql
 
-A real-time collaborative task planning application built with Vue 3, TypeScript, and Naive UI, featuring the Limitless CNC color scheme.
-
-## Features
-
-- ✅ **Real-time collaboration** - See task movements instantly across users
-- ✅ **Presence indicators** - Know who's currently viewing the board
-- ✅ **JWT Authentication** - Secure user authentication with Supabase
-- ✅ **Drag & Drop** - Move tasks between columns easily
-- ✅ **Responsive Design** - Works on desktop and mobile
-- ✅ **Limitless CNC Theme** - Beautiful blue/teal gradient design
-- ✅ **Typing Indicators** - See when users are typing comments (demo)
-- ✅ **Modern Tech Stack** - Vue 3, TypeScript, Pinia, Naive UI
-
-## Tech Stack
-
-- **Frontend**: Vue 3 + TypeScript + Vite
-- **UI Library**: Naive UI (lightweight, tree-shakable)
-- **State Management**: Pinia
-- **Backend**: Supabase (PostgreSQL + Real-time)
-- **Authentication**: Supabase Auth (JWT)
-- **Package Manager**: pnpm
-- **Styling**: Custom CSS with Limitless CNC colors
-
-## Project Structure
-
-```
-src/
-├── components/          # Reusable Vue components
-│   ├── TaskCard.vue    # Individual task card with comments
-│   ├── TaskColumn.vue  # Task column (To Do, In Progress, Done)
-│   └── PresenceIndicator.vue # Shows active users
-├── stores/             # Pinia stores
-│   ├── auth.ts         # Authentication state
-│   ├── tasks.ts        # Task management
-│   └── presence.ts     # User presence tracking
-├── views/              # Page components
-│   ├── AuthView.vue    # Login/Signup page
-│   └── BoardView.vue   # Main task board
-├── lib/                # Utilities and configurations
-│   ├── supabase.ts     # Supabase client setup
-│   └── types.ts        # TypeScript type definitions
-└── router/             # Vue Router configuration
-```
-
-## Setup Instructions
-
-### 1. Install Dependencies
-
-```bash
-pnpm install
-```
-
-### 2. Environment Configuration
-
-Create a `.env` file in the root directory:
-
-```env
-VITE_SUPABASE_URL=your-supabase-project-url
-VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
-```
-
-### 3. Database Setup
-
-Run the following SQL in your Supabase SQL editor to create the required tables:
-
-```sql
 -- Create enum for task status
 CREATE TYPE task_status AS ENUM ('todo', 'in_progress', 'done');
 
@@ -89,6 +24,11 @@ CREATE POLICY "Users can update own profile"
   ON public.profiles FOR UPDATE
   TO authenticated
   USING (auth.uid() = id);
+
+CREATE POLICY "Users can insert own profile"
+  ON public.profiles FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = id);
 
 -- Create trigger to auto-create profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -128,6 +68,11 @@ CREATE POLICY "Authenticated users can create boards"
 
 CREATE POLICY "Board creators can update their boards"
   ON public.boards FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = created_by);
+
+CREATE POLICY "Board creators can delete their boards"
+  ON public.boards FOR DELETE
   TO authenticated
   USING (auth.uid() = created_by);
 
@@ -198,66 +143,32 @@ CREATE POLICY "Users can delete their own presence"
   TO authenticated
   USING (auth.uid() = user_id);
 
+-- Create function to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create triggers for updated_at
+CREATE TRIGGER update_boards_updated_at
+  BEFORE UPDATE ON public.boards
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_tasks_updated_at
+  BEFORE UPDATE ON public.tasks
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- Enable realtime for real-time collaboration
 ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.user_presence;
-```
 
-### 4. Run Development Server
-
-```bash
-pnpm dev
-```
-
-## Key Features Implementation
-
-### Real-time Collaboration
-- Uses Supabase real-time subscriptions
-- Task movements sync instantly across users
-- Presence indicators show active users
-
-### Authentication
-- JWT-based authentication with Supabase Auth
-- Automatic profile creation on signup
-- Protected routes with navigation guards
-
-### Task Management
-- Drag & drop between columns
-- Real-time updates via WebSocket
-- Task creation, editing, and deletion
-
-### Typing Indicators
-- Comment system with typing indicators (demo implementation)
-- Shows when users are typing in real-time
-- Animated typing dots
-
-## Design Philosophy
-
-This project follows the Limitless CNC design principles:
-- **Clean & Modern**: Minimalist design with professional aesthetics
-- **Performance First**: Lightweight Naive UI components
-- **User Experience**: Intuitive drag & drop and real-time collaboration
-- **Brand Consistency**: Uses Limitless CNC color scheme and gradients
-
-## Development Commands
-
-```bash
-# Install dependencies
-pnpm install
-
-# Start development server
-pnpm dev
-
-# Build for production
-pnpm build
-
-# Run linting
-pnpm lint
-
-# Format code
-pnpm format
-```
-
-## License
-
-This project is built for demonstration purposes using the Limitless CNC brand colors and design principles.
+-- Create indexes for better performance
+CREATE INDEX idx_tasks_board_id ON public.tasks(board_id);
+CREATE INDEX idx_tasks_status ON public.tasks(status);
+CREATE INDEX idx_tasks_position ON public.tasks(position);
+CREATE INDEX idx_user_presence_board_id ON public.user_presence(board_id);
+CREATE INDEX idx_user_presence_last_seen ON public.user_presence(last_seen);
+CREATE INDEX idx_boards_created_by ON public.boards(created_by);
